@@ -1,0 +1,40 @@
+[package]
+name = "amai-agent"
+version = "0.1.0"
+edition = "2021"
+authors = ["AMAI Labs <team@amai.net>"]
+description = "AMAI autonomous coding agent — intent-based multi-LLM routing + hardcore SWE prompting"
+
+[[bin]]
+name = "amai"
+path = "src/main.rs"
+
+[dependencies]
+soul-core = { path = "../../../soul/soul-core", features = ["native"] }
+soul-coder = { path = "../../../soul/soul-coder", features = ["native"] }
+soul-gateways = { path = "../../../soul/soul-gateways", features = ["telegram"] }
+
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+chrono = "0.4"
+futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+url = "2"
+ed25519-dalek = { version = "2", features = ["rand_core", "pem"] }
+base64 = "0.22"
+rand = "0.8"
+dirs = "5"
+hex = "0.4"
+hostname = "0.4"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

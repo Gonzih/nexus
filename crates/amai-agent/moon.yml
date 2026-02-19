@@ -1,0 +1,15 @@
+language: rust
+type: application
+platform: system
+
+tasks:
+  build:
+    command: cargo build
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+  test:
+    command: cargo test
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"

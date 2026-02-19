@@ -1,0 +1,100 @@
+# AMAI Agent — Telegram Gateway + Free LLM APIs
+#
+# Provider Routing Strategy:
+#   MiniMax M2.5 (primary)  — Best coding model (SWE-Bench 80.2%), 1M TPM, 20 RPM
+#   Gemini 2.5 Flash (secondary) — 1M context, 250K TPM, huge window for reasoning
+#   Groq Llama 4 Scout (fast fallback) — 30K TPM, 30 RPM, fastest inference
+#   Local Ollama (offline fallback) — No rate limits, works without internet
+#
+# Usage:
+#   amai --config amai-tg.toml --telegram
+#   amai --config amai-tg.toml --supervisor --telegram
+
+[agent]
+strategy = "failover"
+max_turns = 100
+cwd = "/Users/feral/amai-infra"
+context_strategy = "rlm"
+
+# ── Telegram Gateway ────────────────────────────────────────────────────────
+
+[telegram]
+token = "TELEGRAM_BOT_TOKEN_REDACTED"
+allowed_users = ["78131249", "Gonzih"]
+startup_chat_id = "78131249"
+
+# ── Logging ─────────────────────────────────────────────────────────────────
+
+[logging]
+dir = ".amai-logs"
+events = true
+conversations = true
+
+# ── Supervisor ──────────────────────────────────────────────────────────────
+
+[supervisor]
+enabled = true
+self_compile = true
+max_restarts = 0   # unlimited
+restart_delay_secs = 5
+
+# ── Providers ───────────────────────────────────────────────────────────────
+# All free tier. Set API keys as environment variables.
+
+[providers.minimax]
+kind = "openai"
+api_key_env = "MINIMAX_API_KEY"
+base_url = "https://api.minimax.io/v1"
+model = "MiniMax-M2.5"
+context_window = 204800
+max_output_tokens = 8192
+weight = 50
+rpm = 20
+tpm = 1000000
+
+[providers.gemini]
+kind = "openai"
+api_key_env = "GEMINI_API_KEY"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+model = "gemini-2.5-flash"
+context_window = 1048576
+max_output_tokens = 8192
+weight = 30
+rpm = 10
+rpd = 250
+tpm = 250000
+
+[providers.groq]
+kind = "openai"
+api_key_env = "GROQ_API_KEY"
+base_url = "https://api.groq.com/openai/v1"
+model = "meta-llama/llama-4-scout-17b-16e-instruct"
+context_window = 131072
+max_output_tokens = 8192
+weight = 15
+rpm = 30
+rpd = 1000
+tpm = 30000
+
+[providers.ollama]
+kind = "ollama"
+base_url = "http://localhost:11434"
+model = "qwen2.5-coder:7b"
+context_window = 32768
+max_output_tokens = 8192
+weight = 5
+
+# ── Intent Routing ──────────────────────────────────────────────────────────
+# Route by task type to maximize each model's strengths
+
+[intents.code_generation]
+preferred = ["minimax", "gemini"]
+
+[intents.reasoning]
+preferred = ["gemini", "minimax"]
+
+[intents.quick_chat]
+preferred = ["groq", "ollama"]
+
+[intents.subagent]
+preferred = ["groq", "ollama"]

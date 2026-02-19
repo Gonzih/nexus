@@ -1,0 +1,31 @@
+[package]
+name = "amai-app"
+description = "AMAI app — onboarding, agent lifecycle, UI composition"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+amai-tools = { workspace = true }
+soul-core = { workspace = true }
+soul-coder = { workspace = true }
+soul-terminal-core = { workspace = true }
+soul-terminal-widgets = { workspace = true }
+soul-terminal-app = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Window", "Document", "Storage",
+    "HtmlInputElement", "Event",
+] }
+js-sys = { workspace = true }

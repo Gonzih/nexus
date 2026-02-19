@@ -1,0 +1,27 @@
+language: rust
+type: application
+
+tasks:
+  build:
+    command: wasm-pack build crates/amai-wasm --target web --out-dir ../../web/pkg
+    inputs:
+      - 'crates/**/*.rs'
+      - 'Cargo.toml'
+
+  build-dev:
+    command: wasm-pack build crates/amai-wasm --target web --dev --out-dir ../../web/pkg
+    inputs:
+      - 'crates/**/*.rs'
+      - 'Cargo.toml'
+
+  check:
+    command: cargo check --target wasm32-unknown-unknown
+    inputs:
+      - 'crates/**/*.rs'
+      - 'Cargo.toml'
+
+  test:
+    command: cargo test
+    inputs:
+      - 'crates/**/*.rs'
+      - 'Cargo.toml'
