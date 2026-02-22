@@ -237,6 +237,7 @@ impl ShepherdGateway {
                     text: task,
                     metadata: serde_json::json!({
                         "max_turns": envelope.payload.get("max_turns"),
+                        "profile": envelope.payload.get("profile"),
                     }),
                 });
             }

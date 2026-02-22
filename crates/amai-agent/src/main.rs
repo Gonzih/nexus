@@ -2,6 +2,7 @@ mod agent_helpers;
 mod bench;
 mod config;
 mod delegate;
+mod google;
 mod identity;
 mod install_skill;
 mod plan_execute;
@@ -671,9 +672,46 @@ async fn run_shepherd_mode(
                     .map(|v| v as usize)
                     .unwrap_or(max_turns);
 
+                // Extract profile from metadata (sent by shepherd with agent def)
+                let profile_prompt = metadata
+                    .get("profile")
+                    .and_then(|p| p.get("systemPrompt"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                // Create per-agent working memory directory if profile has domains
+                if let Some(profile) = metadata.get("profile") {
+                    if let Some(domains) = profile.get("domains").and_then(|d| d.as_array()) {
+                        if !domains.is_empty() {
+                            let agent_dir = std::path::Path::new(cwd).join("agents").join("working-memory");
+                            std::fs::create_dir_all(&agent_dir).ok();
+                            tracing::info!(dir = %agent_dir.display(), "Per-agent working memory directory created");
+                        }
+                    }
+
+                    // Execute session protocol onStart instructions
+                    if let Some(on_start) = profile
+                        .get("sessionProtocol")
+                        .and_then(|sp| sp.get("onStart"))
+                        .and_then(|os| os.as_array())
+                    {
+                        let instructions: Vec<&str> = on_start
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .collect();
+                        if !instructions.is_empty() {
+                            tracing::info!(
+                                instructions = ?instructions,
+                                "Session protocol onStart"
+                            );
+                        }
+                    }
+                }
+
                 tracing::info!(
                     task = %truncate(&text, 100),
                     max_turns = task_max_turns,
+                    has_profile = profile_prompt.is_some(),
                     "Received task from shepherd"
                 );
 
@@ -702,6 +740,7 @@ async fn run_shepherd_mode(
                     initial_messages,
                     task_max_turns,
                     agent_event_tx,
+                    profile_prompt.as_deref(),
                 )
                 .await;
 
@@ -766,6 +805,7 @@ async fn run_agent_task_with_event_tx(
     initial_messages: Vec<Message>,
     max_turns: usize,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
+    system_prompt_prefix: Option<&str>,
 ) -> Result<Vec<Message>, soul_core::error::SoulError> {
     let model = soul_core::types::ModelInfo {
         id: "balanced".into(),
@@ -786,7 +826,14 @@ async fn run_agent_task_with_event_tx(
         _ => ContextStrategy::Rlm,
     };
 
-    let mut agent_config = AgentConfig::new(model.clone(), prompt::SYSTEM_PROMPT);
+    // Build system prompt: optional profile prefix + base SYSTEM_PROMPT
+    let system_prompt = if let Some(prefix) = system_prompt_prefix {
+        format!("{prefix}\n\n{}", prompt::SYSTEM_PROMPT)
+    } else {
+        prompt::SYSTEM_PROMPT.to_string()
+    };
+
+    let mut agent_config = AgentConfig::new(model.clone(), &system_prompt);
     agent_config.max_turns = Some(max_turns);
     agent_config.context_strategy = context_strategy;
 
@@ -838,6 +885,12 @@ async fn run_agent_task_with_event_tx(
 
     if skills_dir.exists() {
         load_persisted_skills(&skills_dir, &tool_registry);
+    }
+
+    // Google tools: register if credentials are available
+    if let Some(google_auth) = google::load_google_auth(None, None).await {
+        google::register_google_tools(&mut tool_registry, google_auth);
+        tracing::info!("Google tools enabled (7 tools)");
     }
 
     let mut agent = AgentLoop::new(provider, tool_registry, agent_config);
@@ -935,6 +988,12 @@ async fn run_agent_task(
     // Load persisted skills from .amai-skills/
     if skills_dir.exists() {
         load_persisted_skills(&skills_dir, &tool_registry);
+    }
+
+    // Google tools: register if credentials are available
+    if let Some(google_auth) = google::load_google_auth(None, None).await {
+        google::register_google_tools(&mut tool_registry, google_auth);
+        tracing::info!("Google tools enabled (7 tools)");
     }
 
     let mut agent = AgentLoop::new(provider, tool_registry, agent_config);

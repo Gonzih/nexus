@@ -13,6 +13,7 @@ path = "src/main.rs"
 soul-core = { path = "../../../soul/soul-core", features = ["native"] }
 soul-coder = { path = "../../../soul/soul-coder", features = ["native"] }
 soul-gateways = { path = "../../../soul/soul-gateways", features = ["telegram"] }
+soul-google-tools = { path = "../../../soul/soul-google-tools", features = ["native"] }
 
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
