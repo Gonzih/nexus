@@ -217,9 +217,11 @@ impl Tool for PlanExecuteTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "plan_execute".into(),
-            description: "Execute a task graph in parallel. Provide a DAG of tasks with dependencies. \
-                         Independent tasks run concurrently as separate sub-agents. Each task gets \
-                         its own tool set based on purpose. Returns aggregated results from all tasks."
+            description: "Execute a task graph as subagents. Supports sequential (depends_on) and \
+                         parallel (independent) tasks. Primary use: Phase 3 implementation after \
+                         research and planning are done. Each task gets a purpose-driven tool set. \
+                         Keep task descriptions surgical: give file:line targets and what to change, \
+                         not research dumps. Returns aggregated results."
                 .into(),
             input_schema: json!({
                 "type": "object",
@@ -505,7 +507,7 @@ mod tests {
         let tool = make_plan_execute(tx);
         let def = tool.definition();
         assert_eq!(def.name, "plan_execute");
-        assert!(def.description.contains("parallel"));
+        assert!(def.description.contains("subagent"));
 
         let required = def.input_schema["required"].as_array().unwrap();
         let required_names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
