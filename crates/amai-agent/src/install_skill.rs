@@ -263,17 +263,13 @@ impl Tool for InstallSkillTool {
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "URL to fetch content from — can be a skill file OR API documentation. Both work."
+                        "description": "URL to fetch content from — can be a skill file OR API documentation. Provide either url or content."
                     },
                     "content": {
                         "type": "string",
-                        "description": "Raw content — can be skill markdown with YAML frontmatter OR API documentation."
+                        "description": "Raw content — can be skill markdown with YAML frontmatter OR API documentation. Provide either url or content."
                     }
-                },
-                "oneOf": [
-                    {"required": ["url"]},
-                    {"required": ["content"]}
-                ]
+                }
             }),
         }
     }
