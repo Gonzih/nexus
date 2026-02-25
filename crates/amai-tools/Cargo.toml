@@ -20,6 +20,8 @@ js-sys = { workspace = true }
 tracing = { workspace = true }
 uuid = { version = "1", features = ["v4", "js"] }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+chrono = "0.4"
+urlencoding = "2"
 
 [features]
 default = []

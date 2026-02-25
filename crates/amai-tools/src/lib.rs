@@ -4,6 +4,7 @@ mod http_request;
 mod glob;
 mod link;
 mod ask_user;
+mod contracts;
 
 pub use web_fetch::WebFetchTool;
 pub use web_search::WebSearchTool;
@@ -11,6 +12,7 @@ pub use http_request::HttpRequestTool;
 pub use glob::GlobTool;
 pub use link::OpenLinkTool;
 pub use ask_user::AskUserTool;
+pub use contracts::ContractsTool;
 
 use soul_core::tool::ToolRegistry;
 use std::sync::Arc;

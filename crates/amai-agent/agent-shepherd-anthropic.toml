@@ -1,0 +1,72 @@
+# AMAI Agent — Shepherd mode + Anthropic + Full A2A Infrastructure
+# Agent registers with id-service, receives tasks via shepherd WebSocket,
+# settles contracts, logs to soullog.
+#
+# Launch (shepherd spawns this automatically via POST /agents/{id}/start):
+#   amai --config agent-shepherd-anthropic.toml --shepherd ws://shepherd:8084/ws/sessions/{id}
+
+[agent]
+strategy = "failover"
+max_turns = 100
+cwd = "."
+context_strategy = "rlm"
+
+# ── Shepherd Connection ───────────────────────────────────────────────────────
+
+[shepherd]
+# URL injected by shepherd-service at spawn time via --shepherd flag
+heartbeat_secs = 15
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+[logging]
+dir = ".amai-logs"
+events = true
+conversations = true
+
+# ── Supervisor ───────────────────────────────────────────────────────────────
+
+[supervisor]
+enabled = false
+
+# ── Provider ─────────────────────────────────────────────────────────────────
+
+[providers.anthropic]
+kind = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+model = "claude-sonnet-4-6"
+context_window = 200000
+max_output_tokens = 8192
+weight = 10
+
+# ── Intent Routing ────────────────────────────────────────────────────────────
+
+[intents.reasoning]
+preferred = ["anthropic"]
+models = { anthropic = "claude-opus-4-6" }
+
+[intents.code_generation]
+preferred = ["anthropic"]
+models = { anthropic = "claude-opus-4-6" }
+
+[intents.quick_chat]
+preferred = ["anthropic"]
+models = { anthropic = "claude-haiku-4-5-20251001" }
+
+[intents.subagent]
+preferred = ["anthropic"]
+models = { anthropic = "claude-haiku-4-5-20251001" }
+
+# ── Identity (registers with id-service, enables contracts tool) ──────────────
+
+[identity]
+id_service_url = "http://localhost:8080"
+name = "amai-shepherd-agent"
+
+# ── Soul Log ──────────────────────────────────────────────────────────────────
+
+[soullog]
+url = "http://localhost:8086"
+service = "amai-shepherd-agent"
+batch_size = 50
+flush_interval_ms = 500

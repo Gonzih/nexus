@@ -238,6 +238,8 @@ impl ShepherdGateway {
                     metadata: serde_json::json!({
                         "max_turns": envelope.payload.get("max_turns"),
                         "profile": envelope.payload.get("profile"),
+                        "prior_messages": envelope.payload.get("prior_messages"),
+                        "identity_kid": envelope.payload.get("identity_kid"),
                     }),
                 });
             }
@@ -304,6 +306,25 @@ impl ShepherdGateway {
             serde_json::json!({
                 "text": text,
                 "turns_used": turns_used,
+            }),
+        );
+        Self::send_envelope(&self.ws_sink, &envelope).await
+    }
+
+    /// Send result with full conversation history for shepherd to persist (resurrection).
+    pub async fn send_result_with_messages(
+        &self,
+        text: &str,
+        turns_used: usize,
+        messages: &[soul_core::types::Message],
+    ) -> SoulResult<()> {
+        let envelope = Envelope::new(
+            "agent.result",
+            &self.session_id,
+            serde_json::json!({
+                "text": text,
+                "turns_used": turns_used,
+                "messages": messages,
             }),
         );
         Self::send_envelope(&self.ws_sink, &envelope).await

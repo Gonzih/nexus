@@ -30,6 +30,7 @@ use soul_core::types::{AgentConfig, AgentEvent, ContextStrategy, Message};
 use soul_core::vfs::NativeFs;
 use soul_core::vexec::NativeExecutor;
 use soul_gateways::telegram::TelegramGateway;
+use amai_tools::ContractsTool;
 
 #[derive(Parser)]
 #[command(name = "amai", about = "AMAI autonomous coding agent")]
@@ -469,6 +470,7 @@ async fn run_telegram_mode(
                     initial_messages,
                     max_turns,
                     logger.clone(),
+                    None,
                 )
                 .await;
 
@@ -708,15 +710,42 @@ async fn run_shepherd_mode(
                     }
                 }
 
+                // Extract prior_messages from shepherd.task payload for resurrection
+                let prior_messages: Vec<Message> = metadata
+                    .get("prior_messages")
+                    .and_then(|v| {
+                        if v.is_null() {
+                            None
+                        } else {
+                            serde_json::from_value::<Vec<Message>>(v.clone()).ok()
+                        }
+                    })
+                    .unwrap_or_default();
+
                 tracing::info!(
                     task = %truncate(&text, 100),
                     max_turns = task_max_turns,
                     has_profile = profile_prompt.is_some(),
+                    prior_messages = prior_messages.len(),
                     "Received task from shepherd"
                 );
 
-                // Build initial_messages: prior history + new user message
-                let mut initial_messages = session_state.messages.clone();
+                // Build initial_messages: shepherd prior history takes precedence over
+                // local session_state (shepherd is the authoritative state store).
+                // If shepherd sent prior_messages, use those; otherwise fall back to
+                // local session_state (backwards compat with non-resurrection spawns).
+                let mut initial_messages = if !prior_messages.is_empty() {
+                    if prior_messages.len() != session_state.messages.len() {
+                        tracing::info!(
+                            prior = prior_messages.len(),
+                            local = session_state.messages.len(),
+                            "Resurrection: using shepherd prior_messages"
+                        );
+                    }
+                    prior_messages
+                } else {
+                    session_state.messages.clone()
+                };
                 let user_msg = Message::user(&text);
                 initial_messages.push(user_msg.clone());
 
@@ -732,6 +761,9 @@ async fn run_shepherd_mode(
                 let forwarder_handle =
                     forwarder.spawn(agent_event_rx, Some(logger.clone()), soullog.clone());
 
+                // Snapshot initial_messages before moving into agent (needed for result assembly)
+                let initial_messages_snapshot = initial_messages.clone();
+
                 // Run agent task (reuse the same function as other modes)
                 let result = run_agent_task_with_event_tx(
                     provider.clone(),
@@ -741,6 +773,7 @@ async fn run_shepherd_mode(
                     task_max_turns,
                     agent_event_tx,
                     profile_prompt.as_deref(),
+                    agent_identity.as_ref(),
                 )
                 .await;
 
@@ -756,15 +789,20 @@ async fn run_shepherd_mode(
 
                         let turns_used = new_messages.len();
 
-                        // Send result to shepherd
-                        if let Err(e) = gateway.send_result(&response_text, turns_used).await {
+                        // Build full conversation (prior + new) for resurrection.
+                        // initial_messages_snapshot already ends with user_msg.
+                        let mut all_messages = initial_messages_snapshot;
+                        all_messages.extend(new_messages.clone());
+
+                        // Send result to shepherd with full message history for state persistence
+                        if let Err(e) = gateway
+                            .send_result_with_messages(&response_text, turns_used, &all_messages)
+                            .await
+                        {
                             tracing::error!(error = %e, "Failed to send result to shepherd");
                         }
 
-                        // Persist session state
-                        let mut all_messages = session_state.messages.clone();
-                        all_messages.push(user_msg);
-                        all_messages.extend(new_messages.clone());
+                        // Persist session state locally too
                         session_state.messages = all_messages.clone();
                         session_state.total_turns += new_messages.len();
                         if let Err(e) = session_state.save(cwd) {
@@ -806,6 +844,7 @@ async fn run_agent_task_with_event_tx(
     max_turns: usize,
     event_tx: mpsc::UnboundedSender<AgentEvent>,
     system_prompt_prefix: Option<&str>,
+    agent_identity: Option<&identity::AgentIdentity>,
 ) -> Result<Vec<Message>, soul_core::error::SoulError> {
     let model = soul_core::types::ModelInfo {
         id: "balanced".into(),
@@ -893,6 +932,17 @@ async fn run_agent_task_with_event_tx(
         tracing::info!("Google tools enabled (7 tools)");
     }
 
+    // AMAI contracts tool: register if identity is available
+    if let Some(id) = agent_identity {
+        if let Some(ref id_config) = config.identity {
+            tool_registry.register(Box::new(ContractsTool::new(
+                &id_config.id_service_url,
+                &id.kid,
+            )));
+            tracing::info!(kid = %id.kid, "Contracts tool enabled");
+        }
+    }
+
     let mut agent = AgentLoop::new(provider, tool_registry, agent_config);
 
     let options = RunOptions {
@@ -914,6 +964,7 @@ async fn run_agent_task(
     initial_messages: Vec<Message>,
     max_turns: usize,
     logger: Arc<DiskLogger>,
+    agent_identity: Option<&identity::AgentIdentity>,
 ) -> Result<Vec<Message>, soul_core::error::SoulError> {
     let model = soul_core::types::ModelInfo {
         id: "balanced".into(),
@@ -994,6 +1045,17 @@ async fn run_agent_task(
     if let Some(google_auth) = google::load_google_auth(None, None).await {
         google::register_google_tools(&mut tool_registry, google_auth);
         tracing::info!("Google tools enabled (7 tools)");
+    }
+
+    // AMAI contracts tool: register if identity is available
+    if let Some(id) = agent_identity {
+        if let Some(ref id_config) = config.identity {
+            tool_registry.register(Box::new(ContractsTool::new(
+                &id_config.id_service_url,
+                &id.kid,
+            )));
+            tracing::info!(kid = %id.kid, "Contracts tool enabled");
+        }
     }
 
     let mut agent = AgentLoop::new(provider, tool_registry, agent_config);
@@ -1113,6 +1175,30 @@ async fn run_single_task(
     timeout_mins: Option<u64>,
     resume: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Load identity if configured
+    let agent_identity = if let Some(ref id_config) = config.identity {
+        let agent_name = id_config.name.clone().unwrap_or_else(|| {
+            format!(
+                "amai-agent-{}",
+                hostname::get()
+                    .map(|h| h.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| "unknown".into())
+            )
+        });
+        match identity::load_or_register(&id_config.id_service_url, &agent_name, &id_config.key_dir).await {
+            Ok(id) => {
+                tracing::info!(kid = %id.kid, identity_id = %id.identity_id, "Identity loaded");
+                Some(id)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Identity registration failed — proceeding without identity");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Stage context files
     let mut context_note = String::new();
     if !context_files.is_empty() {
@@ -1216,6 +1302,7 @@ async fn run_single_task(
                 initial_messages,
                 max_turns,
                 logger.clone(),
+                agent_identity.as_ref(),
             ),
         )
         .await
@@ -1227,7 +1314,7 @@ async fn run_single_task(
             }
         }
     } else {
-        run_agent_task(provider, config, cwd, initial_messages, max_turns, logger.clone()).await
+        run_agent_task(provider, config, cwd, initial_messages, max_turns, logger.clone(), agent_identity.as_ref()).await
     };
 
     match result {
