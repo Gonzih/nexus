@@ -103,82 +103,68 @@ impl Tool for WebSearchTool {
 
         debug!(query = %query, max_results, "Executing web search");
 
-        let url = format!(
-            "https://html.duckduckgo.com/html/?q={}",
-            urlencoding(&query)
-        );
+        // In native mode (no proxy), use curl via shell to avoid TLS fingerprinting blocks.
+        // DuckDuckGo uses JA3 fingerprinting and blocks reqwest/native-tls clients.
+        // curl uses OpenSSL/LibreSSL which presents a browser-compatible TLS fingerprint.
+        let body = if self.proxy_base_url.is_none() {
+            // Acquire semaphore to serialize DDG requests
+            let _permit = ddg_semaphore().acquire().await.expect("semaphore not closed");
 
-        let fetch_url = if let Some(ref proxy) = self.proxy_base_url {
-            format!("{}/proxy/fetch?url={}", proxy, urlencoding(&url))
-        } else {
-            url
-        };
+            let ddg_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(&query));
+            debug!(query = %query, "web_search: using curl for DDG (TLS compat)");
 
-        let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
-
-        // Acquire global DDG semaphore — serializes all DuckDuckGo requests process-wide.
-        // DuckDuckGo blocks IPs that fire parallel requests; this prevents IP-level bans.
-        let _ddg_permit = if self.proxy_base_url.is_none() {
-            Some(ddg_semaphore().acquire().await.expect("semaphore not closed"))
-        } else {
-            None // Proxy mode — no need to serialize
-        };
-
-        // Retry once on connection errors or 429 (DuckDuckGo may rate-limit parallel requests)
-        // Keep delays short — DDG either responds or silently drops; long retries waste turns.
-        let mut body = None;
-        let mut last_err = String::new();
-        for attempt in 0..2usize {
-            if attempt > 0 {
-                let delay_ms = 500u64;
-                debug!(attempt, delay_ms, "web_search: retrying after delay");
-                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-            }
-            match client.get(&fetch_url).send().await {
-                Ok(resp) => {
-                    if resp.status().as_u16() == 429 {
-                        last_err = format!("DuckDuckGo rate limited (attempt {})", attempt + 1);
-                        warn!(attempt, "web_search: 429 rate limited");
-                        continue;
+            match tokio::process::Command::new("curl")
+                .args([
+                    "-s",           // Silent
+                    "--max-time", "15",
+                    "-A", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "-L",           // Follow redirects
+                    "--compressed", // Accept gzip
+                    &ddg_url,
+                ])
+                .output()
+                .await
+            {
+                Ok(out) if out.status.success() && !out.stdout.is_empty() => {
+                    let text = String::from_utf8_lossy(&out.stdout);
+                    if text.len() > MAX_BODY_BYTES {
+                        text[..MAX_BODY_BYTES].to_string()
+                    } else {
+                        text.to_string()
                     }
-                    if !resp.status().is_success() {
-                        let status = resp.status();
-                        last_err = format!("HTTP {status}");
-                        warn!(status = %status, "Web search HTTP error");
-                        break; // Don't retry non-429 HTTP errors
-                    }
-                    match resp.text().await {
-                        Ok(text) => {
-                            body = Some(if text.len() > MAX_BODY_BYTES {
-                                text[..MAX_BODY_BYTES].to_string()
-                            } else {
-                                text
-                            });
-                            break;
-                        }
-                        Err(e) => {
-                            last_err = format!("Body read error: {e}");
-                            warn!(error = %e, "Failed to read search response body");
-                            break;
-                        }
-                    }
+                }
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    warn!(query = %query, stderr = %stderr, "web_search: curl failed");
+                    return Ok(ToolOutput::error(format!("Search failed: {stderr}")));
                 }
                 Err(e) => {
-                    last_err = format!("Connection error: {e}");
-                    warn!(attempt, error = %e, "web_search: request failed");
-                    // retry on connection error
-                    continue;
+                    warn!(query = %query, error = %e, "web_search: curl exec failed");
+                    return Ok(ToolOutput::error(format!("Search failed: {e}")));
                 }
             }
-        }
+        } else {
+            // Proxy mode (WASM): use reqwest through the proxy
+            let proxy_url = self.proxy_base_url.as_ref().unwrap();
+            let ddg_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(&query));
+            let fetch_url = format!("{}/proxy/fetch?url={}", proxy_url, urlencoding(&ddg_url));
 
-        let body = match body {
-            Some(b) => b,
-            None => return Ok(ToolOutput::error(format!("Search request failed: {last_err}"))),
+            let client = reqwest::Client::builder()
+                .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .timeout(std::time::Duration::from_secs(20))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+
+            match client.get(&fetch_url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    match resp.text().await {
+                        Ok(text) => if text.len() > MAX_BODY_BYTES { text[..MAX_BODY_BYTES].to_string() } else { text },
+                        Err(e) => return Ok(ToolOutput::error(format!("Failed to read response: {e}"))),
+                    }
+                }
+                Ok(resp) => return Ok(ToolOutput::error(format!("Search failed: HTTP {}", resp.status()))),
+                Err(e) => return Ok(ToolOutput::error(format!("Search failed: {e}"))),
+            }
         };
 
         let results = parse_ddg_html(&body, max_results);
