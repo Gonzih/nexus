@@ -1,6 +1,8 @@
 mod web_fetch;
 mod web_search;
 mod http_request;
+mod fetch_url;
+mod arxiv;
 mod glob;
 mod link;
 mod ask_user;
@@ -9,6 +11,8 @@ mod contracts;
 pub use web_fetch::WebFetchTool;
 pub use web_search::WebSearchTool;
 pub use http_request::HttpRequestTool;
+pub use fetch_url::FetchUrlTool;
+pub use arxiv::ArxivSearchTool;
 pub use glob::GlobTool;
 pub use link::OpenLinkTool;
 pub use ask_user::AskUserTool;
@@ -78,12 +82,28 @@ pub fn amai_tools(
 
 /// Create a ToolRegistry with agent tools for native (non-WASM) environments.
 ///
-/// Includes web search, HTTP requests, and glob — tools that an autonomous
-/// agent uses when it has direct system access (no proxy needed).
+/// Includes web search, native URL fetch, HTTP requests, ArXiv, and glob — tools that
+/// an autonomous agent uses when it has direct system access (no proxy needed).
 pub fn agent_tools(cwd: impl Into<String>) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     registry.register(Box::new(WebSearchTool::new()));
+    registry.register(Box::new(FetchUrlTool::new()));
     registry.register(Box::new(HttpRequestTool::new()));
+    registry.register(Box::new(ArxivSearchTool::new()));
     registry.register(Box::new(GlobTool::new(cwd)));
     registry
+}
+
+/// Return agent tools as a Vec of boxed tools, for merging into an existing ToolRegistry.
+///
+/// Use this when you need to extend an existing registry with agent tools
+/// without creating a new one.
+pub fn agent_tools_vec(cwd: impl Into<String>) -> Vec<Box<dyn soul_core::tool::Tool>> {
+    vec![
+        Box::new(WebSearchTool::new()),
+        Box::new(FetchUrlTool::new()),
+        Box::new(HttpRequestTool::new()),
+        Box::new(ArxivSearchTool::new()),
+        Box::new(GlobTool::new(cwd)),
+    ]
 }

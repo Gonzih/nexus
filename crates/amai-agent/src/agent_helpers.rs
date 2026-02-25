@@ -17,8 +17,13 @@ use soul_core::types::{
 use soul_core::vfs::NativeFs;
 use soul_core::vexec::NativeExecutor;
 
-/// Maximum result size returned to parent (50KB).
+use amai_tools::{WebSearchTool, FetchUrlTool, HttpRequestTool};
+
+/// Maximum result size returned to parent for non-research tasks (50KB).
 pub const MAX_RESULT_BYTES: usize = 50 * 1024;
+
+/// Maximum result size for research subagents (200KB — research needs to preserve detail).
+pub const MAX_RESEARCH_RESULT_BYTES: usize = 200 * 1024;
 
 /// Results larger than this get summarized by a cheap LLM instead of truncated.
 /// Below this threshold, truncation is used (a few extra chars aren't worth an LLM call).
@@ -55,12 +60,7 @@ impl Purpose {
 
     pub fn system_prompt(&self) -> &'static str {
         match self {
-            Purpose::Research => {
-                "You are a research agent with bash access for web/network queries. \
-                 Use bash to run curl, fetch URLs, or query APIs. Read local files as needed. \
-                 Return a compact summary: specific facts, URLs, code snippets. \
-                 NO prose. NO preamble. Output only what was asked for."
-            }
+            Purpose::Research => crate::prompt::RESEARCH_SYSTEM_PROMPT,
             Purpose::Explore => {
                 "You are a codebase explorer. Your job is TRUTH COMPRESSION: \
                  find the exact facts the parent agent needs, return them as compact pointers. \
@@ -99,9 +99,13 @@ pub fn build_tools(purpose: Purpose, cwd: &str) -> ToolRegistry {
 
     match purpose {
         Purpose::Research => {
-            // Read-only FS tools + bash (for curl/network access)
+            // Read-only FS tools + bash + web tools (search, fetch, HTTP, ArXiv)
             let mut registry = soul_coder::read_only_tools(fs, cwd);
             registry.register(Box::new(soul_coder::BashTool::new(executor, cwd)));
+            registry.register(Box::new(WebSearchTool::new()));
+            registry.register(Box::new(FetchUrlTool::new()));
+            registry.register(Box::new(HttpRequestTool::new()));
+            registry.register(Box::new(amai_tools::ArxivSearchTool::new()));
             registry
         }
         Purpose::Explore => {
@@ -144,8 +148,21 @@ pub fn make_child_model() -> ModelInfo {
 pub fn make_child_config(model: ModelInfo, purpose: Purpose, max_turns: usize) -> AgentConfig {
     let mut config = AgentConfig::new(model, purpose.system_prompt());
     config.max_turns = Some(max_turns);
-    config.context_strategy = ContextStrategy::Classic; // subagents use classic — lightweight
+    // Research agents use RLM (full history) — they need to remember earlier sources.
+    // All other subagents use Classic (truncation) for lightweight operation.
+    config.context_strategy = match purpose {
+        Purpose::Research => ContextStrategy::Rlm,
+        _ => ContextStrategy::Classic,
+    };
     config
+}
+
+/// Return the appropriate result byte limit for the given purpose.
+pub fn max_result_bytes_for(purpose: Purpose) -> usize {
+    match purpose {
+        Purpose::Research => MAX_RESEARCH_RESULT_BYTES,
+        _ => MAX_RESULT_BYTES,
+    }
 }
 
 // ─── Result Extraction ───────────────────────────────────────────────────────
@@ -395,6 +412,10 @@ mod tests {
         assert!(names.contains(&"find"));
         assert!(names.contains(&"ls"));
         assert!(names.contains(&"bash"));
+        assert!(names.contains(&"web_search"));
+        assert!(names.contains(&"fetch_url"));
+        assert!(names.contains(&"http_request"));
+        assert!(names.contains(&"arxiv_search"));
         assert!(!names.contains(&"write"));
         assert!(!names.contains(&"edit"));
     }
@@ -611,10 +632,25 @@ mod tests {
     }
 
     #[test]
-    fn make_child_config_sets_classic_strategy() {
+    fn make_child_config_code_uses_classic() {
         let model = make_child_model();
         let config = make_child_config(model, Purpose::Code, 20);
         assert_eq!(config.context_strategy, ContextStrategy::Classic);
         assert_eq!(config.max_turns, Some(20));
+    }
+
+    #[test]
+    fn make_child_config_research_uses_rlm() {
+        let model = make_child_model();
+        let config = make_child_config(model, Purpose::Research, 30);
+        assert_eq!(config.context_strategy, ContextStrategy::Rlm);
+        assert_eq!(config.max_turns, Some(30));
+    }
+
+    #[test]
+    fn max_result_bytes_for_purpose() {
+        assert_eq!(max_result_bytes_for(Purpose::Research), MAX_RESEARCH_RESULT_BYTES);
+        assert_eq!(max_result_bytes_for(Purpose::Code), MAX_RESULT_BYTES);
+        assert_eq!(max_result_bytes_for(Purpose::General), MAX_RESULT_BYTES);
     }
 }

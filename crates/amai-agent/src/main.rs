@@ -30,7 +30,7 @@ use soul_core::types::{AgentConfig, AgentEvent, ContextStrategy, Message};
 use soul_core::vfs::NativeFs;
 use soul_core::vexec::NativeExecutor;
 use soul_gateways::telegram::TelegramGateway;
-use amai_tools::ContractsTool;
+use amai_tools::{ContractsTool, agent_tools_vec};
 
 #[derive(Parser)]
 #[command(name = "amai", about = "AMAI autonomous coding agent")]
@@ -943,6 +943,12 @@ async fn run_agent_task_with_event_tx(
         }
     }
 
+    // Web + network tools: web_search, fetch_url, http_request, arxiv, glob
+    for tool in agent_tools_vec(cwd) {
+        tool_registry.register(tool);
+    }
+    tracing::info!("Agent tools enabled (web_search, fetch_url, http_request, arxiv, glob)");
+
     let mut agent = AgentLoop::new(provider, tool_registry, agent_config);
 
     let options = RunOptions {
@@ -1057,6 +1063,12 @@ async fn run_agent_task(
             tracing::info!(kid = %id.kid, "Contracts tool enabled");
         }
     }
+
+    // Web + network tools: web_search, fetch_url, http_request, arxiv, glob
+    for tool in agent_tools_vec(cwd) {
+        tool_registry.register(tool);
+    }
+    tracing::info!("Agent tools enabled (web_search, fetch_url, http_request, arxiv, glob)");
 
     let mut agent = AgentLoop::new(provider, tool_registry, agent_config);
 
