@@ -90,6 +90,10 @@ struct Cli {
     /// Run as supervisor (auto-restart loop with optional self-compile)
     #[arg(long)]
     supervisor: bool,
+
+    /// Agent purpose — selects system prompt: "code" (default), "research"
+    #[arg(long)]
+    purpose: Option<String>,
 }
 
 #[tokio::main]
@@ -272,6 +276,7 @@ async fn main() {
         &cli.context_files,
         cli.timeout,
         cli.resume.as_deref(),
+        cli.purpose.as_deref(),
     )
     .await;
 
@@ -470,6 +475,7 @@ async fn run_telegram_mode(
                     initial_messages,
                     max_turns,
                     logger.clone(),
+                    None,
                     None,
                 )
                 .await;
@@ -971,6 +977,7 @@ async fn run_agent_task(
     max_turns: usize,
     logger: Arc<DiskLogger>,
     agent_identity: Option<&identity::AgentIdentity>,
+    system_prompt_override: Option<&str>,
 ) -> Result<Vec<Message>, soul_core::error::SoulError> {
     let model = soul_core::types::ModelInfo {
         id: "balanced".into(),
@@ -991,7 +998,8 @@ async fn run_agent_task(
         _ => ContextStrategy::Rlm,
     };
 
-    let mut agent_config = AgentConfig::new(model.clone(), prompt::SYSTEM_PROMPT);
+    let effective_system_prompt = system_prompt_override.unwrap_or(prompt::SYSTEM_PROMPT);
+    let mut agent_config = AgentConfig::new(model.clone(), effective_system_prompt);
     agent_config.max_turns = Some(max_turns);
     agent_config.context_strategy = context_strategy;
 
@@ -1186,6 +1194,7 @@ async fn run_single_task(
     context_files: &[PathBuf],
     timeout_mins: Option<u64>,
     resume: Option<&str>,
+    purpose: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Load identity if configured
     let agent_identity = if let Some(ref id_config) = config.identity {
@@ -1303,6 +1312,16 @@ async fn run_single_task(
 
     let timeout_duration = timeout_mins.map(|mins| Duration::from_secs(mins * 60));
 
+    // Select system prompt based on purpose
+    let system_prompt_override: Option<String> = match purpose {
+        Some("research") => {
+            tracing::info!("Purpose: research — using RESEARCH_SYSTEM_PROMPT");
+            Some(prompt::RESEARCH_SYSTEM_PROMPT.to_string())
+        }
+        _ => None,
+    };
+    let system_prompt_ref = system_prompt_override.as_deref();
+
     let result = if let Some(timeout) = timeout_duration {
         tracing::info!(timeout_mins = timeout.as_secs() / 60, "Timeout set");
         match tokio::time::timeout(
@@ -1315,6 +1334,7 @@ async fn run_single_task(
                 max_turns,
                 logger.clone(),
                 agent_identity.as_ref(),
+                system_prompt_ref,
             ),
         )
         .await
@@ -1326,7 +1346,7 @@ async fn run_single_task(
             }
         }
     } else {
-        run_agent_task(provider, config, cwd, initial_messages, max_turns, logger.clone(), agent_identity.as_ref()).await
+        run_agent_task(provider, config, cwd, initial_messages, max_turns, logger.clone(), agent_identity.as_ref(), system_prompt_ref).await
     };
 
     match result {
