@@ -110,35 +110,56 @@ impl Tool for WebSearchTool {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let body = match client.get(&fetch_url).send().await {
-            Ok(resp) => {
-                if !resp.status().is_success() {
-                    let status = resp.status();
-                    warn!(status = %status, "Web search HTTP error");
-                    return Ok(ToolOutput::error(format!(
-                        "Search request failed with status {status}"
-                    )));
-                }
-                match resp.text().await {
-                    Ok(text) => {
-                        if text.len() > MAX_BODY_BYTES {
-                            text[..MAX_BODY_BYTES].to_string()
-                        } else {
-                            text
+        // Retry up to 2 times on connection errors or 429 (DuckDuckGo rate limits parallel requests)
+        let mut body = None;
+        let mut last_err = String::new();
+        for attempt in 0..3usize {
+            if attempt > 0 {
+                let delay_ms = 2000u64 * attempt as u64;
+                debug!(attempt, delay_ms, "web_search: retrying after delay");
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            }
+            match client.get(&fetch_url).send().await {
+                Ok(resp) => {
+                    if resp.status().as_u16() == 429 {
+                        last_err = format!("DuckDuckGo rate limited (attempt {})", attempt + 1);
+                        warn!(attempt, "web_search: 429 rate limited");
+                        continue;
+                    }
+                    if !resp.status().is_success() {
+                        let status = resp.status();
+                        last_err = format!("HTTP {status}");
+                        warn!(status = %status, "Web search HTTP error");
+                        break; // Don't retry non-429 HTTP errors
+                    }
+                    match resp.text().await {
+                        Ok(text) => {
+                            body = Some(if text.len() > MAX_BODY_BYTES {
+                                text[..MAX_BODY_BYTES].to_string()
+                            } else {
+                                text
+                            });
+                            break;
+                        }
+                        Err(e) => {
+                            last_err = format!("Body read error: {e}");
+                            warn!(error = %e, "Failed to read search response body");
+                            break;
                         }
                     }
-                    Err(e) => {
-                        warn!(error = %e, "Failed to read search response body");
-                        return Ok(ToolOutput::error(format!(
-                            "Failed to read search response: {e}"
-                        )));
-                    }
+                }
+                Err(e) => {
+                    last_err = format!("Connection error: {e}");
+                    warn!(attempt, error = %e, "web_search: request failed");
+                    // retry on connection error
+                    continue;
                 }
             }
-            Err(e) => {
-                warn!(error = %e, "Web search request failed");
-                return Ok(ToolOutput::error(format!("Search request failed: {e}")));
-            }
+        }
+
+        let body = match body {
+            Some(b) => b,
+            None => return Ok(ToolOutput::error(format!("Search request failed: {last_err}"))),
         };
 
         let results = parse_ddg_html(&body, max_results);
