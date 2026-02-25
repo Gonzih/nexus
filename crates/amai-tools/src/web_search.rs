@@ -116,6 +116,7 @@ impl Tool for WebSearchTool {
 
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (compatible; AMAI-Agent/1.0)")
+            .timeout(std::time::Duration::from_secs(15)) // Fast timeout — DDG may silently drop connections
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -127,12 +128,13 @@ impl Tool for WebSearchTool {
             None // Proxy mode — no need to serialize
         };
 
-        // Retry up to 2 times on connection errors or 429 (DuckDuckGo rate limits parallel requests)
+        // Retry once on connection errors or 429 (DuckDuckGo may rate-limit parallel requests)
+        // Keep delays short — DDG either responds or silently drops; long retries waste turns.
         let mut body = None;
         let mut last_err = String::new();
-        for attempt in 0..3usize {
+        for attempt in 0..2usize {
             if attempt > 0 {
-                let delay_ms = 1500u64 * attempt as u64;
+                let delay_ms = 500u64;
                 debug!(attempt, delay_ms, "web_search: retrying after delay");
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
             }
