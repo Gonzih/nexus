@@ -189,12 +189,12 @@ impl Tool for DelegateTool {
         // Extract result
         let (result_text, turns_used) = agent_helpers::extract_result_text(result);
 
-        // Truncate if needed
-        let truncated = agent_helpers::truncate_result(&result_text, MAX_RESULT_BYTES);
+        // Compress: summarize if large, truncate if just a bit over, pass through if small
+        let truncated = agent_helpers::compress_result(&result_text, MAX_RESULT_BYTES, &self.provider).await;
 
         // Emit end event
         let preview = if result_text.len() > 200 {
-            format!("{}...", &result_text[..200])
+            format!("{}...", agent_helpers::truncate_result(&result_text, 200))
         } else {
             result_text
         };

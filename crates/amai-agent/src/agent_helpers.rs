@@ -20,6 +20,10 @@ use soul_core::vexec::NativeExecutor;
 /// Maximum result size returned to parent (50KB).
 pub const MAX_RESULT_BYTES: usize = 50 * 1024;
 
+/// Results larger than this get summarized by a cheap LLM instead of truncated.
+/// Below this threshold, truncation is used (a few extra chars aren't worth an LLM call).
+pub const SUMMARY_THRESHOLD_BYTES: usize = 8 * 1024;
+
 /// Default per-child turn limit.
 pub const DEFAULT_CHILD_TURNS: usize = 15;
 
@@ -198,6 +202,43 @@ pub fn truncate_result(text: &str, max_bytes: usize) -> String {
     }
 }
 
+/// Compress a large result: summarize via LLM if above threshold, truncate otherwise.
+///
+/// - `text.len() <= max_bytes` → return as-is
+/// - `max_bytes < text.len() <= SUMMARY_THRESHOLD_BYTES` → truncate (not worth LLM call)
+/// - `text.len() > SUMMARY_THRESHOLD_BYTES` → one-shot LLM summary, fallback to truncate
+pub async fn compress_result(text: &str, max_bytes: usize, provider: &Arc<dyn Provider>) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    if text.len() <= SUMMARY_THRESHOLD_BYTES {
+        return truncate_result(text, max_bytes);
+    }
+
+    // Large result: summarize with cheapest available model (one-shot, no tools).
+    let prompt = format!(
+        "Summarize the following agent output in 3-5 bullet points. \
+         Preserve: file paths, line numbers, key findings, errors. \
+         Be concise. No preamble.\n\n---\n{text}"
+    );
+    let messages = vec![Message::user(prompt)];
+    let model = make_child_model();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let auth = soul_core::types::AuthProfile::new(soul_core::types::ProviderKind::Custom("balanced".into()), "");
+    match provider.stream(&messages, "", &[], &model, &auth, tx).await {
+        Ok(response) => {
+            let summary = response.text_content();
+            if summary.trim().is_empty() {
+                truncate_result(text, max_bytes)
+            } else {
+                format!("[summarized from {} bytes]\n{}", text.len(), summary)
+            }
+        }
+        Err(_) => truncate_result(text, max_bytes),
+    }
+}
+
 // ─── Event Forwarding ────────────────────────────────────────────────────────
 
 /// Forward relevant child agent events to the parent event channel.
@@ -279,6 +320,43 @@ pub async fn run_child_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct MockProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for MockProvider {
+        fn kind(&self) -> soul_core::types::ProviderKind {
+            soul_core::types::ProviderKind::Custom("mock".into())
+        }
+        async fn stream(
+            &self,
+            _messages: &[Message],
+            _system: &str,
+            _tools: &[soul_core::types::ToolDefinition],
+            _model: &ModelInfo,
+            _auth: &soul_core::types::AuthProfile,
+            _event_tx: tokio::sync::mpsc::UnboundedSender<soul_core::types::StreamDelta>,
+        ) -> soul_core::error::SoulResult<Message> {
+            Ok(Message::assistant("Mock subagent result"))
+        }
+        async fn count_tokens(
+            &self,
+            _messages: &[Message],
+            _system: &str,
+            _tools: &[soul_core::types::ToolDefinition],
+            _model: &ModelInfo,
+            _auth: &soul_core::types::AuthProfile,
+        ) -> soul_core::error::SoulResult<usize> {
+            Ok(100)
+        }
+        async fn probe(
+            &self,
+            _model: &ModelInfo,
+            _auth: &soul_core::types::AuthProfile,
+        ) -> soul_core::error::SoulResult<soul_core::provider::ProbeResult> {
+            Ok(soul_core::provider::ProbeResult { healthy: true, rate_limit_remaining: None, rate_limit_utilization: None })
+        }
+    }
 
     // ─── Purpose Parsing Tests ──────────────────────────────────────────
 
@@ -393,6 +471,85 @@ mod tests {
     }
 
     // ─── Result Extraction Tests ────────────────────────────────────────
+
+    // ─── compress_result Tests ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn compress_result_passthrough_under_limit() {
+        let provider: Arc<dyn Provider> = Arc::new(MockProvider);
+        let text = "short result";
+        let result = compress_result(text, 100, &provider).await;
+        assert_eq!(result, "short result");
+    }
+
+    #[tokio::test]
+    async fn compress_result_truncates_below_summary_threshold() {
+        let provider: Arc<dyn Provider> = Arc::new(MockProvider);
+        // text.len() > max_bytes but <= SUMMARY_THRESHOLD_BYTES → truncate path
+        let text = "a".repeat(200);
+        let result = compress_result(&text, 50, &provider).await;
+        assert!(result.contains("truncated"));
+        assert!(!result.contains("summarized"));
+    }
+
+    #[tokio::test]
+    async fn compress_result_summarizes_above_threshold() {
+        let provider: Arc<dyn Provider> = Arc::new(MockProvider);
+        // text.len() > SUMMARY_THRESHOLD_BYTES → LLM summary path
+        let text = "x".repeat(SUMMARY_THRESHOLD_BYTES + 1);
+        let result = compress_result(&text, 100, &provider).await;
+        // MockProvider returns "Mock subagent result" → should get summarized header
+        assert!(result.contains("summarized from"));
+    }
+
+    #[tokio::test]
+    async fn compress_result_fallback_on_provider_error() {
+        let provider: Arc<dyn Provider> = Arc::new(ErrorProvider);
+        let text = "x".repeat(SUMMARY_THRESHOLD_BYTES + 1);
+        let result = compress_result(&text, 100, &provider).await;
+        // Provider errors → falls back to truncation
+        assert!(result.contains("truncated"));
+    }
+
+    /// Provider that always errors — for testing compress_result fallback.
+    struct ErrorProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for ErrorProvider {
+        fn kind(&self) -> soul_core::types::ProviderKind {
+            soul_core::types::ProviderKind::Custom("error".into())
+        }
+        async fn stream(
+            &self,
+            _messages: &[Message],
+            _system: &str,
+            _tools: &[soul_core::types::ToolDefinition],
+            _model: &ModelInfo,
+            _auth: &soul_core::types::AuthProfile,
+            _event_tx: tokio::sync::mpsc::UnboundedSender<soul_core::types::StreamDelta>,
+        ) -> soul_core::error::SoulResult<Message> {
+            Err(soul_core::error::SoulError::Provider("simulated failure".into()))
+        }
+        async fn count_tokens(
+            &self,
+            _messages: &[Message],
+            _system: &str,
+            _tools: &[soul_core::types::ToolDefinition],
+            _model: &ModelInfo,
+            _auth: &soul_core::types::AuthProfile,
+        ) -> soul_core::error::SoulResult<usize> {
+            Ok(0)
+        }
+        async fn probe(
+            &self,
+            _model: &ModelInfo,
+            _auth: &soul_core::types::AuthProfile,
+        ) -> soul_core::error::SoulResult<soul_core::provider::ProbeResult> {
+            Ok(soul_core::provider::ProbeResult { healthy: false, rate_limit_remaining: None, rate_limit_utilization: None })
+        }
+    }
+
+    // ─── truncate_result Tests ──────────────────────────────────────────
 
     #[test]
     fn truncate_result_within_limit() {

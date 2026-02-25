@@ -158,7 +158,7 @@ impl PlanExecuteTool {
 
         tokio::spawn(async move {
             let (text, _turns) = agent_helpers::run_child_agent(
-                provider,
+                provider.clone(),
                 purpose,
                 &cwd,
                 &description,
@@ -168,8 +168,8 @@ impl PlanExecuteTool {
             )
             .await;
 
-            let truncated = agent_helpers::truncate_result(&text, MAX_RESULT_BYTES);
-            (task_id, Ok(truncated))
+            let compressed = agent_helpers::compress_result(&text, MAX_RESULT_BYTES, &provider).await;
+            (task_id, Ok(compressed))
         })
     }
 
@@ -355,7 +355,7 @@ impl Tool for PlanExecuteTool {
                         results.insert(task_id, text.clone());
 
                         let preview = if text.len() > 200 {
-                            format!("{}...", &text[..200])
+                            format!("{}...", agent_helpers::truncate_result(&text, 200))
                         } else {
                             text
                         };
