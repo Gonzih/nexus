@@ -10,5 +10,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/amai/target/release/amai /usr/local/bin/amai
 COPY configs/docker-agent.toml /etc/amai/agent.toml
+COPY configs/docker-anthropic.toml /etc/amai/anthropic.toml
 COPY configs/docker-minimax.toml /etc/amai/minimax.toml
 ENTRYPOINT ["amai"]
