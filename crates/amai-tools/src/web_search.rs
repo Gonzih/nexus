@@ -115,8 +115,8 @@ impl Tool for WebSearchTool {
         };
 
         let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (compatible; AMAI-Agent/1.0)")
-            .timeout(std::time::Duration::from_secs(15)) // Fast timeout — DDG may silently drop connections
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .timeout(std::time::Duration::from_secs(20))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
