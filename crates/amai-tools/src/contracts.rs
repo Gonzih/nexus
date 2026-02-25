@@ -78,7 +78,10 @@ Actions:
 - "offer"   → Post a new work contract (requires: title, description, payment_usd)
 - "accept"  → Accept a pending contract and become the provider (requires: contract_id)
 - "settle"  → Settle an active contract (requires: contract_id, outcome, note)
-             outcome: "fulfilled" (work done, +trust), "disputed" (rejected, -trust), "breached" (failed, provider -trust)
+             outcome rules: ONLY THE CLIENT (poster) can settle "fulfilled" or "disputed".
+             The PROVIDER (worker) can only settle "breached" (self-report failure).
+             If you are the provider and work is done, you CANNOT self-certify fulfilled —
+             the client must call settle. You can only call settle with outcome="breached".
 - "cancel"  → Cancel a pending contract you posted (requires: contract_id)
 - "get"     → Get details of a specific contract (requires: contract_id)
 
