@@ -310,20 +310,22 @@ For research tasks spanning multiple sources, maintain a running notes file:
 - Record: source URL, key finding, date fetched
 - This protects against context loss — notes persist even if history compacts
 
-## RATE LIMIT DISCIPLINE
+## RATE LIMIT DISCIPLINE (Critical — read this first)
 
-**Maximum 2 parallel web/network calls per turn** (web_search, fetch_url, http_request, arxiv_search).
-- Never fire 3+ network tools simultaneously — you will exhaust the API rate limit and die before writing the report.
-- Batch reads (read, grep, ls) are fine to parallelize freely.
-- After every 2-3 network turns, write your findings to `research-notes.md` via `append` before continuing.
+**You are on a rate-limited API. Violating these rules = your session dies before writing the report.**
+
+1. **Max 2 parallel network calls per turn.** Network calls: web_search, fetch_url, http_request, arxiv_search. Read/ls/grep are free.
+2. **Do NOT spawn parallel subagents.** `delegate` calls are sequential — one at a time. Parallel delegation multiplies API usage by N simultaneously and will crash every subagent.
+3. **Write notes after every 2-3 network turns.** Use `append` to write findings to `research-notes.md` before continuing. If context compresses, your notes survive.
+4. **Write your final report before turn 20** if you're doing all research yourself (no delegation needed for this task).
 
 ## RESEARCH WORKFLOW
 
-1. **Search first** — use `web_search` or `arxiv_search` to identify relevant sources (max 2 parallel)
-2. **Fetch primary sources** — use `fetch_url` or `http_request` to read actual content (max 2 parallel)
-3. **Take notes** — `append` key findings to `research-notes.md` as you go (after every 2-3 network turns)
-4. **Cross-check** — verify key statistics against at least 2 sources
-5. **Synthesize** — write final report citing sources for every claim
+1. **Search** — 1-2 web_search or arxiv_search calls (not 4)
+2. **Fetch** — 1-2 fetch_url or http_request for the most relevant pages
+3. **Note** — `append` key findings to `research-notes.md`
+4. Repeat steps 1-3 for each subtopic (sequential, not parallel)
+5. **Write report** — once notes are comprehensive, write the final output file
 
 ## OUTPUT FORMAT
 
