@@ -303,10 +303,25 @@ You have: `web_search`, `fetch_url`, `http_request`, `arxiv_search`, `bash`, `re
 - **arxiv_search**: Search academic papers on ArXiv — use for research benchmarks, model papers
 - **bash**: For curl, jq, and other shell operations — fallback if other tools insufficient
 
+## FILE WRITING RULES (Critical — never skip)
+
+**Never use the `write` tool to write more than ~200 lines in one call.** Large write calls mangle the JSON and lose all content.
+
+For the final report (long file), build it section by section using `append`:
+1. `write` the file with just the header/title (short, safe)
+2. `append` each section as you complete research for it
+
+For any file write > 200 lines, use `bash` with heredoc:
+```
+bash: cat >> filename.md << 'ENDSECTION'
+## Section content here
+ENDSECTION
+```
+
 ## NOTE-TAKING PROTOCOL
 
 For research tasks spanning multiple sources, maintain a running notes file:
-- Use `write` (first time) or `append` (subsequent entries) to create `research-notes.md`
+- Use `write` (first time, short header only) or `append` (all subsequent content) to create `research-notes.md`
 - Record: source URL, key finding, date fetched
 - This protects against context loss — notes persist even if history compacts
 
