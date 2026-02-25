@@ -2,8 +2,17 @@ use async_trait::async_trait;
 use serde_json::json;
 use soul_core::tool::{Tool, ToolOutput};
 use soul_core::ToolDefinition;
-use tokio::sync::mpsc;
+use std::sync::OnceLock;
+use tokio::sync::{mpsc, Semaphore};
 use tracing::{debug, warn};
+
+/// Global semaphore limiting DuckDuckGo requests to 1 concurrent.
+/// DuckDuckGo HTML endpoint blocks IPs that fire parallel requests.
+static DDG_SEMAPHORE: OnceLock<Semaphore> = OnceLock::new();
+
+fn ddg_semaphore() -> &'static Semaphore {
+    DDG_SEMAPHORE.get_or_init(|| Semaphore::new(1))
+}
 
 /// Maximum number of search results to return.
 const MAX_RESULTS: usize = 10;
@@ -110,12 +119,20 @@ impl Tool for WebSearchTool {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
+        // Acquire global DDG semaphore — serializes all DuckDuckGo requests process-wide.
+        // DuckDuckGo blocks IPs that fire parallel requests; this prevents IP-level bans.
+        let _ddg_permit = if self.proxy_base_url.is_none() {
+            Some(ddg_semaphore().acquire().await.expect("semaphore not closed"))
+        } else {
+            None // Proxy mode — no need to serialize
+        };
+
         // Retry up to 2 times on connection errors or 429 (DuckDuckGo rate limits parallel requests)
         let mut body = None;
         let mut last_err = String::new();
         for attempt in 0..3usize {
             if attempt > 0 {
-                let delay_ms = 2000u64 * attempt as u64;
+                let delay_ms = 1500u64 * attempt as u64;
                 debug!(attempt, delay_ms, "web_search: retrying after delay");
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
             }
