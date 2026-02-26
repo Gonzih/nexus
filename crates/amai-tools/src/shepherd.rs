@@ -229,7 +229,7 @@ Use this flow for A2A delegation:
                 let config_path = arguments
                     .get("config_path")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("/Users/boxy/amai-anthropic.toml");
+                    .unwrap_or("/Users/boxy/amai-infra/amai/crates/amai-agent/agent-shepherd-anthropic.toml");
                 let cwd = arguments
                     .get("cwd")
                     .and_then(|v| v.as_str())

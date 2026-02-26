@@ -13,7 +13,7 @@ context_strategy = "rlm"
 kind = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 model = "claude-sonnet-4-6"        # default: Sonnet 4.6 (balanced)
-context_window = 200000
+context_window = 80000
 max_output_tokens = 8192
 weight = 10
 
