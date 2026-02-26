@@ -133,6 +133,8 @@ impl TelegramConfig {
 pub struct ShepherdConfig {
     /// WebSocket URL (e.g. ws://shepherd:8084/ws/sessions/{session_id})
     pub url: Option<String>,
+    /// HTTP API URL for the shepherd tool to spawn/manage sessions (default: http://localhost:8084)
+    pub api_url: Option<String>,
     /// Heartbeat interval in seconds (default: 15)
     pub heartbeat_secs: Option<u64>,
 }

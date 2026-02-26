@@ -36,7 +36,7 @@ impl AgentIdentity {
         &self.public_key_pem
     }
 
-    fn secret_key_bytes(&self) -> [u8; 32] {
+    pub fn secret_key_bytes(&self) -> [u8; 32] {
         // PEM format: base64 between -----BEGIN/END PRIVATE KEY-----
         let pem_body: String = self
             .secret_key_pem

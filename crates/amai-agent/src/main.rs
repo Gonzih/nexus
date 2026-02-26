@@ -30,7 +30,7 @@ use soul_core::types::{AgentConfig, AgentEvent, ContextStrategy, Message};
 use soul_core::vfs::NativeFs;
 use soul_core::vexec::NativeExecutor;
 use soul_gateways::telegram::TelegramGateway;
-use amai_tools::{ContractsTool, agent_tools_vec};
+use amai_tools::{ContractsTool, ShepherdTool, agent_tools_vec};
 
 #[derive(Parser)]
 #[command(name = "amai", about = "AMAI autonomous coding agent")]
@@ -946,6 +946,20 @@ async fn run_agent_task_with_event_tx(
                 &id.kid,
             )));
             tracing::info!(kid = %id.kid, "Contracts tool enabled");
+
+            // Shepherd tool: spawn/manage sub-agent sessions
+            let shepherd_api_url = config
+                .shepherd
+                .as_ref()
+                .and_then(|s| s.api_url.clone())
+                .unwrap_or_else(|| "http://localhost:8084".to_string());
+            tool_registry.register(Box::new(ShepherdTool::new(
+                &shepherd_api_url,
+                &id_config.id_service_url,
+                &id.kid,
+                id.secret_key_bytes(),
+            )));
+            tracing::info!(url = %shepherd_api_url, "Shepherd tool enabled");
         }
     }
 
@@ -1069,6 +1083,20 @@ async fn run_agent_task(
                 &id.kid,
             )));
             tracing::info!(kid = %id.kid, "Contracts tool enabled");
+
+            // Shepherd tool: spawn/manage sub-agent sessions
+            let shepherd_api_url = config
+                .shepherd
+                .as_ref()
+                .and_then(|s| s.api_url.clone())
+                .unwrap_or_else(|| "http://localhost:8084".to_string());
+            tool_registry.register(Box::new(ShepherdTool::new(
+                &shepherd_api_url,
+                &id_config.id_service_url,
+                &id.kid,
+                id.secret_key_bytes(),
+            )));
+            tracing::info!(url = %shepherd_api_url, "Shepherd tool enabled");
         }
     }
 
