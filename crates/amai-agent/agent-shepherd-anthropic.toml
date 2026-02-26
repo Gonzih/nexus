@@ -16,6 +16,7 @@ context_strategy = "rlm"
 [shepherd]
 # URL injected by shepherd-service at spawn time via --shepherd flag
 heartbeat_secs = 15
+api_url = "http://localhost:8094"
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ enabled = false
 kind = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 model = "claude-sonnet-4-6"
-context_window = 200000
+context_window = 80000
 max_output_tokens = 8192
 weight = 10
 
@@ -62,6 +63,7 @@ models = { anthropic = "claude-haiku-4-5-20251001" }
 [identity]
 id_service_url = "http://localhost:8080"
 name = "amai-shepherd-agent"
+key_dir = "/Users/boxy/.amai/provider-identity"
 
 # ── Soul Log ──────────────────────────────────────────────────────────────────
 

@@ -252,8 +252,10 @@ Use this flow for A2A delegation:
                     .map(|cid| {
                         format!(
                             "\n\nYou are operating under contract {cid}. \
-                             If you complete successfully, do nothing — the client will settle fulfilled. \
-                             If you cannot complete, call amai_contracts settle(contract_id=\"{cid}\", outcome=\"breached\", note=\"reason\")."
+                             IMPORTANT: Your first action must be to call amai_contracts accept(contract_id=\"{cid}\") \
+                             to move the contract from Pending to Active. Then complete the work. \
+                             If you succeed, do nothing after completion — the client will assess and settle. \
+                             If you cannot complete the work, call amai_contracts settle(contract_id=\"{cid}\", outcome=\"breached\", note=\"<reason>\")."
                         )
                     })
                     .unwrap_or_default();
