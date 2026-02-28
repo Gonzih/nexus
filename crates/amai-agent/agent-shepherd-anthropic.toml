@@ -7,9 +7,9 @@
 
 [agent]
 strategy = "failover"
-max_turns = 100
+max_turns = 40
 cwd = "."
-context_strategy = "rlm"
+context_strategy = "classic"
 
 # ── Shepherd Connection ───────────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@ enabled = false
 kind = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 model = "claude-sonnet-4-6"
-context_window = 80000
+context_window = 120000
 max_output_tokens = 8192
 weight = 10
 
