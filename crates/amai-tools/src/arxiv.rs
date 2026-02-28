@@ -187,9 +187,14 @@ fn parse_arxiv_atom(xml: &str) -> Vec<serde_json::Value> {
         // Authors: multiple <author><name>...</name></author>
         let authors = extract_all_tags(entry, "name");
 
-        // Truncate summary to 500 chars for readability
+        // Truncate summary to 500 chars for readability (char boundary safe)
         let summary_short = if summary.len() > 500 {
-            format!("{}...", &summary[..500])
+            let cutoff = summary.char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= 500)
+                .last()
+                .unwrap_or(0);
+            format!("{}...", &summary[..cutoff])
         } else {
             summary
         };
