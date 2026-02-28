@@ -163,8 +163,68 @@ struct RegisteredIdentity {
     trust_score: f64,
 }
 
+/// Check whether a kid is known to id-service. Returns true if registered.
+async fn kid_exists_in_id_service(id_service_url: &str, kid: &str) -> bool {
+    let client = reqwest::Client::new();
+    let url = format!("{}/identity/kid/{}", id_service_url.trim_end_matches('/'), kid);
+    client
+        .get(&url)
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+/// Register an existing keypair with id-service (e.g. after a service restart).
+async fn register_existing_keypair(
+    id_service_url: &str,
+    agent_name: &str,
+    public_pem: &str,
+    signing_key: &SigningKey,
+) -> Result<String, String> {
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let nonce = generate_nonce();
+    let sign_payload = format!("{agent_name}|{timestamp}|{nonce}");
+    let signature = signing_key.sign(sign_payload.as_bytes());
+    let sig_b64 = BASE64.encode(signature.to_bytes());
+
+    let body = serde_json::json!({
+        "name": agent_name,
+        "public_key": public_pem,
+        "key_type": "ed25519",
+        "signature": sig_b64,
+        "timestamp": timestamp,
+        "nonce": nonce,
+    });
+
+    let client = reqwest::Client::new();
+    let url = format!("{}/register", id_service_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("id-service request failed: {e}"))?;
+
+    let status = resp.status();
+    let resp_body: IdServiceResponse<RegisterData> = resp
+        .json()
+        .await
+        .map_err(|e| format!("id-service response parse error: {e}"))?;
+
+    if !resp_body.success || resp_body.data.is_none() {
+        let err_msg = resp_body.error.unwrap_or_else(|| format!("HTTP {status}"));
+        return Err(format!("id-service re-registration failed: {err_msg}"));
+    }
+
+    Ok(resp_body.data.unwrap().identity.id)
+}
+
 /// Load existing identity from disk, or generate a new keypair and register
 /// with the id-service. Returns the identity for use in the agent session.
+///
+/// If the identity exists on disk but the kid is missing from id-service
+/// (e.g. after a service restart), the existing keypair is re-registered.
 pub async fn load_or_register(
     id_service_url: &str,
     agent_name: &str,
@@ -172,13 +232,35 @@ pub async fn load_or_register(
 ) -> Result<AgentIdentity, String> {
     // Try loading from disk first
     if let Some(identity) = load_identity(key_dir) {
+        // Verify the kid is still known to id-service
+        if kid_exists_in_id_service(id_service_url, &identity.kid).await {
+            tracing::info!(
+                identity_id = %identity.identity_id,
+                name = %identity.name,
+                kid = %identity.kid,
+                "Loaded existing identity"
+            );
+            return Ok(identity);
+        }
+
+        // id-service lost the registration (restart) — re-register with existing keypair
         tracing::info!(
-            identity_id = %identity.identity_id,
-            name = %identity.name,
             kid = %identity.kid,
-            "Loaded existing identity"
+            name = %identity.name,
+            "Identity not found in id-service — re-registering existing keypair"
         );
-        return Ok(identity);
+        let secret_bytes = identity.secret_key_bytes();
+        let signing_key = SigningKey::from_bytes(&secret_bytes);
+        let re_name = if identity.name.is_empty() { agent_name } else { &identity.name };
+        match register_existing_keypair(id_service_url, re_name, &identity.public_key_pem, &signing_key).await {
+            Ok(_) => {
+                tracing::info!(kid = %identity.kid, "Re-registration succeeded");
+                return Ok(identity);
+            }
+            Err(e) => {
+                tracing::warn!(kid = %identity.kid, error = %e, "Re-registration failed — generating fresh identity");
+            }
+        }
     }
 
     tracing::info!(name = %agent_name, "No identity found — generating keypair and registering");
