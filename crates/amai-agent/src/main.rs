@@ -570,12 +570,13 @@ async fn run_shepherd_mode(
     // ── Identity: load or register with id-service ──
     let agent_identity = if let Some(ref id_config) = config.identity {
         let agent_name = id_config.name.clone().unwrap_or_else(|| {
-            format!(
-                "amai-agent-{}",
-                hostname::get()
-                    .map(|h| h.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| "unknown".into())
-            )
+            let host = hostname::get()
+                .map(|h| h.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "unknown".into());
+            let safe: String = host.chars()
+                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+                .collect();
+            format!("amai-agent-{safe}")
         });
         match identity::load_or_register(
             &id_config.id_service_url,
@@ -1227,12 +1228,13 @@ async fn run_single_task(
     // Load identity if configured
     let agent_identity = if let Some(ref id_config) = config.identity {
         let agent_name = id_config.name.clone().unwrap_or_else(|| {
-            format!(
-                "amai-agent-{}",
-                hostname::get()
-                    .map(|h| h.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| "unknown".into())
-            )
+            let host = hostname::get()
+                .map(|h| h.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "unknown".into());
+            let safe: String = host.chars()
+                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+                .collect();
+            format!("amai-agent-{safe}")
         });
         match identity::load_or_register(&id_config.id_service_url, &agent_name, &id_config.key_dir).await {
             Ok(id) => {
