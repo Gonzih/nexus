@@ -34,7 +34,8 @@ impl ShepherdTool {
     }
 
     /// Build a signed envelope around a payload.
-    /// Signature = Ed25519(JSON.stringify(payload)) — matches id-service auth.rs.
+    /// Sends payload as a JSON string so shepherd passes it through to /verify
+    /// without re-serializing — avoids float divergence (Rust 3.0 vs JS 3).
     fn sign(&self, payload: &Value) -> Value {
         let payload_json = serde_json::to_string(payload).unwrap_or_default();
         let sig_bytes = self.signing_key.sign(payload_json.as_bytes());
@@ -51,8 +52,10 @@ impl ShepherdTool {
             hex::encode(bytes)
         };
 
+        // payload is sent as a string — shepherd auth.ts passes strings through
+        // to id-service /verify unchanged, avoiding JSON re-serialization divergence.
         json!({
-            "payload": payload,
+            "payload": payload_json,
             "signature": signature,
             "kid": self.kid,
             "timestamp": ts,
