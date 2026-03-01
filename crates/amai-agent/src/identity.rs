@@ -163,10 +163,11 @@ struct RegisteredIdentity {
     trust_score: f64,
 }
 
-/// Check whether a kid is known to id-service. Returns true if registered.
-async fn kid_exists_in_id_service(id_service_url: &str, kid: &str) -> bool {
+/// Check whether an identity name is known to id-service. Returns true if registered.
+/// Uses /identity/:name which exists in id-service (unlike /identity/kid/:kid which doesn't).
+async fn identity_exists_in_id_service(id_service_url: &str, name: &str) -> bool {
     let client = reqwest::Client::new();
-    let url = format!("{}/identity/kid/{}", id_service_url.trim_end_matches('/'), kid);
+    let url = format!("{}/identity/{}", id_service_url.trim_end_matches('/'), name);
     client
         .get(&url)
         .send()
@@ -232,13 +233,15 @@ pub async fn load_or_register(
 ) -> Result<AgentIdentity, String> {
     // Try loading from disk first
     if let Some(identity) = load_identity(key_dir) {
-        // Verify the kid is still known to id-service
-        if kid_exists_in_id_service(id_service_url, &identity.kid).await {
+        let re_name = if identity.name.is_empty() { agent_name } else { &identity.name };
+
+        // Check if the name is already registered in id-service
+        if identity_exists_in_id_service(id_service_url, re_name).await {
             tracing::info!(
                 identity_id = %identity.identity_id,
                 name = %identity.name,
                 kid = %identity.kid,
-                "Loaded existing identity"
+                "Loaded existing identity (name confirmed in id-service)"
             );
             return Ok(identity);
         }
@@ -251,10 +254,15 @@ pub async fn load_or_register(
         );
         let secret_bytes = identity.secret_key_bytes();
         let signing_key = SigningKey::from_bytes(&secret_bytes);
-        let re_name = if identity.name.is_empty() { agent_name } else { &identity.name };
         match register_existing_keypair(id_service_url, re_name, &identity.public_key_pem, &signing_key).await {
             Ok(_) => {
                 tracing::info!(kid = %identity.kid, "Re-registration succeeded");
+                return Ok(identity);
+            }
+            Err(e) if e.contains("Name already taken") => {
+                // Race condition: another process registered the name between our check and attempt.
+                // The on-disk identity is still valid — return it.
+                tracing::info!(kid = %identity.kid, "Name already taken during re-registration — using on-disk identity");
                 return Ok(identity);
             }
             Err(e) => {
