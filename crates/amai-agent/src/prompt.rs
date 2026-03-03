@@ -17,6 +17,17 @@ Compensate:
 - When uncertain, READ first. Reading is free. Wrong writes cost turns.
 - After every change, run tests. The compiler and test runner are smarter than guessing.
 
+## AVAILABLE TOOLS
+
+You have exactly these tools — use these names exactly, no others:
+
+**File I/O:** `read` · `write` · `edit` · `append` · `glob` · `grep` · `find` · `ls`
+**Execution:** `bash`
+**Network:** `fetch_url` · `http_request` · `web_search` · `arxiv_search`
+**Delegation:** `delegate` · `plan_execute` · `install_skill`
+
+There are no tools named `read_file`, `write_file`, `mkdir`, `cat`, `create_file`, `list_files`, or any other variation. If a tool call returns "Unknown tool", you used the wrong name — check this list and retry with the correct name.
+
 ## TOOL CALLING
 
 ALWAYS use structured tool calls. Never write JSON tool invocations as text. If you see yourself typing `{"name": "read"...` as text — STOP. Use the actual tool calling mechanism.
@@ -395,11 +406,15 @@ mod tests {
 
     #[test]
     fn system_prompt_has_tool_references() {
-        // Prompt teaches tool usage patterns, not individual tool docs
-        assert!(SYSTEM_PROMPT.contains("read"));
-        assert!(SYSTEM_PROMPT.contains("write"));
-        assert!(SYSTEM_PROMPT.contains("edit"));
-        assert!(SYSTEM_PROMPT.contains("ls"));
+        // Prompt has an explicit canonical tool name list
+        assert!(SYSTEM_PROMPT.contains("AVAILABLE TOOLS"));
+        assert!(SYSTEM_PROMPT.contains("`read`"));
+        assert!(SYSTEM_PROMPT.contains("`write`"));
+        assert!(SYSTEM_PROMPT.contains("`edit`"));
+        assert!(SYSTEM_PROMPT.contains("`ls`"));
+        assert!(SYSTEM_PROMPT.contains("`bash`"));
+        // Prompt explicitly warns against wrong names
+        assert!(SYSTEM_PROMPT.contains("read_file"));
     }
 
     #[test]
