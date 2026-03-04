@@ -114,6 +114,9 @@ pub struct TelegramConfig {
     pub allowed_users: Vec<String>,
     /// Chat ID to send startup notification to
     pub startup_chat_id: Option<String>,
+    /// Optional system prompt prefix injected before the base system prompt.
+    /// Use this to set the agent's identity, persona, or gateway-specific instructions.
+    pub system_prompt: Option<String>,
 }
 
 impl TelegramConfig {

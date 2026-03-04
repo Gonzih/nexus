@@ -367,6 +367,7 @@ async fn run_telegram_mode(
         }
     };
 
+    let tg_system_prompt = tg_config.system_prompt.clone();
     let gateway = TelegramGateway::new(&token)
         .with_allowed_users(tg_config.allowed_users.clone());
 
@@ -474,7 +475,7 @@ async fn run_telegram_mode(
                     max_turns,
                     logger.clone(),
                     None,
-                    None,
+                    tg_system_prompt.as_deref(),
                 )
                 .await;
 
