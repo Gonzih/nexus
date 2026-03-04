@@ -1,0 +1,45 @@
+# AMAI Agent — Telegram Gateway + qwen3-coder:30b via local Ollama
+# Bot: @feral_custom_agent_bot
+#
+# Run on boxy:
+#   ~/amai-infra/amai/target/release/amai \
+#     --config ~/amai-infra/amai/crates/amai-agent/agent-tg-qwen-coder.toml \
+#     --telegram
+
+[agent]
+strategy = "failover"
+max_turns = 100
+cwd = "/Users/boxy/amai-infra"
+context_strategy = "classic"   # Classic for local models
+
+# ── Telegram Gateway ─────────────────────────────────────────────────────────
+
+[telegram]
+token = "TELEGRAM_BOT_TOKEN_REDACTED"
+allowed_users = ["78131249"]
+startup_chat_id = "78131249"
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+[logging]
+dir = ".amai-logs"
+events = true
+conversations = true
+
+# ── Supervisor ───────────────────────────────────────────────────────────────
+
+[supervisor]
+enabled = true
+self_compile = false
+max_restarts = 0
+restart_delay_secs = 5
+
+# ── Provider ─────────────────────────────────────────────────────────────────
+
+[providers.qwen]
+kind = "ollama"
+base_url = "http://localhost:11434"
+model = "qwen3-coder:30b"
+context_window = 32768
+max_output_tokens = 4096
+weight = 10
