@@ -9,7 +9,7 @@
 [agent]
 strategy = "failover"
 max_turns = 100
-cwd = "/Users/boxy/amai-infra"
+cwd = "/Users/boxy/amai-qwen-sessions"
 context_strategy = "classic"   # Classic for local models
 
 # ── Telegram Gateway ─────────────────────────────────────────────────────────
