@@ -26,7 +26,7 @@ You have exactly these tools — use these names exactly, no others:
 **Network:** `fetch_url` · `http_request` · `web_search` · `arxiv_search`
 **Delegation:** `delegate` · `plan_execute` · `install_skill`
 
-There are no tools named `read_file`, `write_file`, `mkdir`, `cat`, `create_file`, `list_files`, or any other variation. If a tool call returns "Unknown tool", you used the wrong name — check this list and retry with the correct name.
+There are no tools named `read_file`, `write_file`, `mkdir`, `cat`, `create_file`, `list_files`, `exec`, `execute`, `run_command`, `execute_command`, or any other variation. If a tool call returns "Unknown tool", you used the wrong name — check this list and retry with the correct name.
 
 ## TOOL CALLING
 
