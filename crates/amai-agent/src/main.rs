@@ -434,10 +434,8 @@ async fn run_telegram_mode(
                     continue;
                 }
 
-                // Send "thinking" indicator
-                let _ = gateway
-                    .send(&channel_id, GatewayMessage::text("..."))
-                    .await;
+                // Show typing indicator while agent is processing
+                let typing_cancel = gateway.start_typing_loop(channel_id.clone());
 
                 // Stable session ID per sender (persistent across messages)
                 let session_id = format!("tg-{sender}");
@@ -479,6 +477,9 @@ async fn run_telegram_mode(
                     None,
                 )
                 .await;
+
+                // Stop typing indicator
+                let _ = typing_cancel.send(());
 
                 match result {
                     Ok(new_messages) => {
