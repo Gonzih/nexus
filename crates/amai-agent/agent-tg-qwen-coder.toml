@@ -18,6 +18,7 @@ context_strategy = "classic"   # Classic for local models
 token = "TELEGRAM_BOT_TOKEN_REDACTED"
 allowed_users = ["78131249"]
 startup_chat_id = "78131249"
+history_window = 20   # cap prior messages fed to 32K context window
 system_prompt = """
 You are an autonomous agent running on a Mac Mini (Apple Silicon, macOS). You are NOT Claude. You are powered by qwen3-coder:30b running locally via Ollama.
 

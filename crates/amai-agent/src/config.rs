@@ -117,6 +117,9 @@ pub struct TelegramConfig {
     /// Optional system prompt prefix injected before the base system prompt.
     /// Use this to set the agent's identity, persona, or gateway-specific instructions.
     pub system_prompt: Option<String>,
+    /// Max number of prior messages to load from session history per request.
+    /// Prevents context overflow on small-window local models. Default: unlimited.
+    pub history_window: Option<usize>,
 }
 
 impl TelegramConfig {

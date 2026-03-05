@@ -368,6 +368,7 @@ async fn run_telegram_mode(
     };
 
     let tg_system_prompt = tg_config.system_prompt.clone();
+    let tg_history_window = tg_config.history_window;
     let gateway = TelegramGateway::new(&token)
         .with_allowed_users(tg_config.allowed_users.clone());
 
@@ -458,8 +459,15 @@ async fn run_telegram_mode(
                     }
                 };
 
-                // Build initial_messages: prior history + new user message
-                let mut initial_messages = session_state.messages.clone();
+                // Build initial_messages: prior history (windowed) + new user message
+                let prior = if let Some(window) = tg_history_window {
+                    let msgs = &session_state.messages;
+                    let start = msgs.len().saturating_sub(window);
+                    msgs[start..].to_vec()
+                } else {
+                    session_state.messages.clone()
+                };
+                let mut initial_messages = prior;
                 let user_msg = Message::user(&text);
                 initial_messages.push(user_msg.clone());
 
