@@ -103,23 +103,56 @@ impl Tool for WebSearchTool {
 
         debug!(query = %query, max_results, "Executing web search");
 
-        // In native mode (no proxy), use curl via shell to avoid TLS fingerprinting blocks.
-        // DuckDuckGo uses JA3 fingerprinting and blocks reqwest/native-tls clients.
-        // curl uses OpenSSL/LibreSSL which presents a browser-compatible TLS fingerprint.
+        // In native mode (no proxy), try the DDG Instant Answer JSON API first.
+        // This API is not IP-rate-limited and works on all machines. Falls back to
+        // HTML scraping (via curl) if the JSON API returns no usable results.
         let body = if self.proxy_base_url.is_none() {
             // Acquire semaphore to serialize DDG requests
             let _permit = ddg_semaphore().acquire().await.expect("semaphore not closed");
 
+            // Try DDG Instant Answer JSON API first — works on all IPs
+            let json_url = format!(
+                "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1",
+                urlencoding(&query)
+            );
+            debug!(query = %query, "web_search: trying DDG JSON API");
+
+            let json_result = tokio::process::Command::new("curl")
+                .args(["-s", "--max-time", "10", &json_url])
+                .output()
+                .await;
+
+            let json_output = match &json_result {
+                Ok(out) if out.status.success() && !out.stdout.is_empty() => {
+                    let text = String::from_utf8_lossy(&out.stdout);
+                    parse_ddg_json(&text, max_results)
+                }
+                _ => vec![],
+            };
+
+            if !json_output.is_empty() {
+                let mut out = format!("Search results for: {query}\n\n");
+                for (i, r) in json_output.iter().enumerate() {
+                    out.push_str(&format!("{}. {}\n   {}\n   {}\n\n", i + 1, r.title, r.url, r.snippet));
+                }
+                return Ok(ToolOutput::success(out).with_metadata(json!({
+                    "result_count": json_output.len(),
+                    "query": query,
+                    "source": "ddg_json",
+                })));
+            }
+
+            // Fallback: HTML scraping via curl (browser-compatible TLS fingerprint)
             let ddg_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(&query));
-            debug!(query = %query, "web_search: using curl for DDG (TLS compat)");
+            debug!(query = %query, "web_search: falling back to DDG HTML scraping");
 
             match tokio::process::Command::new("curl")
                 .args([
-                    "-s",           // Silent
+                    "-s",
                     "--max-time", "15",
                     "-A", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "-L",           // Follow redirects
-                    "--compressed", // Accept gzip
+                    "-L",
+                    "--compressed",
                     &ddg_url,
                 ])
                 .output()
@@ -314,6 +347,68 @@ fn parse_ddg_html(html: &str, max_results: usize) -> Vec<SearchResult> {
 /// Decode DuckDuckGo redirect URLs.
 /// DDG wraps results in redirect URLs like:
 /// `//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com&rut=...`
+/// Parse DuckDuckGo Instant Answer JSON API response into search results.
+///
+/// The JSON API returns an Abstract (Wikipedia summary), RelatedTopics, and Results.
+/// This is not a full web search but works on IPs where the HTML endpoint is blocked.
+fn parse_ddg_json(json_str: &str, max_results: usize) -> Vec<SearchResult> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str) else {
+        return vec![];
+    };
+
+    let mut results = Vec::new();
+
+    // Include the abstract (Wikipedia summary) if present
+    let abstract_text = v.get("Abstract").and_then(|v| v.as_str()).unwrap_or("");
+    let abstract_url = v.get("AbstractURL").and_then(|v| v.as_str()).unwrap_or("");
+    let heading = v.get("Heading").and_then(|v| v.as_str()).unwrap_or("");
+
+    if !abstract_text.is_empty() && !abstract_url.is_empty() {
+        results.push(SearchResult {
+            title: if heading.is_empty() { "Wikipedia".into() } else { heading.into() },
+            url: abstract_url.into(),
+            snippet: abstract_text.into(),
+        });
+    }
+
+    // Include Results (official sites etc.)
+    if let Some(res_arr) = v.get("Results").and_then(|v| v.as_array()) {
+        for item in res_arr.iter().take(max_results.saturating_sub(results.len())) {
+            let text = item.get("Text").and_then(|v| v.as_str()).unwrap_or("");
+            let url = item.get("FirstURL").and_then(|v| v.as_str()).unwrap_or("");
+            if !url.is_empty() {
+                results.push(SearchResult {
+                    title: text.into(),
+                    url: url.into(),
+                    snippet: String::new(),
+                });
+            }
+        }
+    }
+
+    // Include RelatedTopics
+    if let Some(topics) = v.get("RelatedTopics").and_then(|v| v.as_array()) {
+        for item in topics.iter().take(max_results.saturating_sub(results.len())) {
+            let text = item.get("Text").and_then(|v| v.as_str()).unwrap_or("");
+            let url = item.get("FirstURL").and_then(|v| v.as_str()).unwrap_or("");
+            if !text.is_empty() && !url.is_empty() {
+                let (title, snippet) = if let Some(dot) = text.find(" - ") {
+                    (&text[..dot], &text[dot + 3..])
+                } else {
+                    (text, "")
+                };
+                results.push(SearchResult {
+                    title: title.into(),
+                    url: url.into(),
+                    snippet: snippet.into(),
+                });
+            }
+        }
+    }
+
+    results
+}
+
 fn decode_ddg_url(raw: &str) -> String {
     if raw.contains("uddg=") {
         if let Some(start) = raw.find("uddg=") {
