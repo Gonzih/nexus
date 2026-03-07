@@ -8,6 +8,8 @@ mod link;
 mod ask_user;
 mod contracts;
 mod shepherd;
+#[cfg(feature = "native")]
+mod synthesize;
 
 pub use web_fetch::WebFetchTool;
 pub use web_search::WebSearchTool;
@@ -19,6 +21,8 @@ pub use link::OpenLinkTool;
 pub use ask_user::AskUserTool;
 pub use contracts::ContractsTool;
 pub use shepherd::ShepherdTool;
+#[cfg(feature = "native")]
+pub use synthesize::{SynthesizeTool, SynthesizedShellTool};
 
 use soul_core::tool::ToolRegistry;
 use std::sync::Arc;
