@@ -1,0 +1,53 @@
+# Nexus Agent — Telegram Gateway + Local Ollama + Gemini
+# Start: ./run-tg.sh
+# Supervised: ./run-tg.sh --supervisor
+
+[agent]
+strategy = "failover"
+max_turns = 50
+cwd = "/Users/feral/nexus-infra"
+context_strategy = "rlm"
+
+[telegram]
+token = "TELEGRAM_BOT_TOKEN_REDACTED"
+allowed_users = ["78131249", "Gonzih"]
+startup_chat_id = "78131249"
+
+[logging]
+dir = ".nexus-logs"
+events = true
+conversations = true
+
+[supervisor]
+enabled = true
+self_compile = true
+max_restarts = 0
+restart_delay_secs = 5
+
+# Primary: local Ollama with minimax (fastest, no rate limits)
+[providers.minimax]
+kind = "ollama"
+base_url = "http://localhost:11434"
+model = "minimax-m2.5:cloud"
+context_window = 128000
+max_output_tokens = 4096
+weight = 50
+
+# Secondary: Gemini 2.5 Flash (free tier, 1M context, great reasoning)
+[providers.gemini]
+kind = "openai"
+api_key_env = "GEMINI_API_KEY"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+model = "gemini-2.5-flash"
+context_window = 1048576
+max_output_tokens = 8192
+weight = 30
+rpm = 10
+rpd = 250
+tpm = 250000
+
+[intents.code_generation]
+preferred = ["minimax", "gemini"]
+
+[intents.reasoning]
+preferred = ["gemini", "minimax"]

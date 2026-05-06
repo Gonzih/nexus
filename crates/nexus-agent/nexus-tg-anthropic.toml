@@ -1,0 +1,76 @@
+# Nexus Agent — Telegram Gateway + Anthropic + Full A2A Infrastructure
+# Routing: Sonnet 4.6 default, Opus 4.6 for reasoning/code, Haiku 4.5 for subagent/quick
+#
+# Deploy to boxy:
+#   scp nexus-tg-anthropic.toml boxy@100.84.38.25:~/nexus-tg-anthropic.toml
+#   ssh boxy "ANTHROPIC_API_KEY=... ~/nexus-agent --config ~/nexus-tg-anthropic.toml"
+
+[agent]
+strategy = "failover"
+max_turns = 100
+cwd = "/Users/boxy/nexus-infra"
+context_strategy = "rlm"
+
+# ── Telegram Gateway ─────────────────────────────────────────────────────────
+
+[telegram]
+token = "TELEGRAM_BOT_TOKEN_REDACTED"
+allowed_users = ["78131249", "Gonzih"]
+startup_chat_id = "78131249"
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+[logging]
+dir = ".nexus-logs"
+events = true
+conversations = true
+
+# ── Supervisor ───────────────────────────────────────────────────────────────
+
+[supervisor]
+enabled = true
+self_compile = false
+max_restarts = 0
+restart_delay_secs = 5
+
+# ── Provider ─────────────────────────────────────────────────────────────────
+
+[providers.anthropic]
+kind = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+model = "claude-sonnet-4-6"
+context_window = 200000
+max_output_tokens = 8192
+weight = 10
+
+# ── Intent Routing ────────────────────────────────────────────────────────────
+
+[intents.reasoning]
+preferred = ["anthropic"]
+models = { anthropic = "claude-opus-4-6" }
+
+[intents.code_generation]
+preferred = ["anthropic"]
+models = { anthropic = "claude-opus-4-6" }
+
+[intents.quick_chat]
+preferred = ["anthropic"]
+models = { anthropic = "claude-haiku-4-5-20251001" }
+
+[intents.subagent]
+preferred = ["anthropic"]
+models = { anthropic = "claude-haiku-4-5-20251001" }
+
+# ── Identity (registers with id-service on boxy) ──────────────────────────────
+
+[identity]
+id_service_url = "http://localhost:8080"
+name = "boxy-tg-agent"
+
+# ── Soul Log ──────────────────────────────────────────────────────────────────
+
+[soullog]
+url = "http://localhost:8086"
+service = "boxy-tg-agent"
+batch_size = 50
+flush_interval_ms = 500

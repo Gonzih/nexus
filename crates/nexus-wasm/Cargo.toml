@@ -1,0 +1,23 @@
+[package]
+name = "nexus-wasm"
+description = "WASM entry point for Nexus — browser-first AI agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nexus-app = { workspace = true }
+soul-terminal-core = { workspace = true }
+soul-terminal-app = { workspace = true }
+
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true, features = ["Document", "Window", "Element", "HtmlCanvasElement"] }
+console_log = { workspace = true }
+console_error_panic_hook = { workspace = true }
+log = { workspace = true }
