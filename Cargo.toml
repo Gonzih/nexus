@@ -1,26 +1,26 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/amai-wasm",
-    "crates/amai-app",
-    "crates/amai-tools",
-    "crates/amai-server",
-    "crates/amai-agent",
+    "crates/nexus-wasm",
+    "crates/nexus-app",
+    "crates/nexus-tools",
+    "crates/nexus-server",
+    "crates/nexus-agent",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-authors = ["AMAI Labs <team@amai.net>"]
-repository = "https://github.com/AMAI-LABS/amai"
+authors = ["Nexus Labs <team@nexus.net>"]
+repository = "https://github.com/Nexus-LABS/nexus"
 
 [workspace.dependencies]
 # Internal crates
-amai-app = { path = "crates/amai-app", version = "0.1.0" }
-amai-tools = { path = "crates/amai-tools", version = "0.1.0" }
+nexus-app = { path = "crates/nexus-app", version = "0.1.0" }
+nexus-tools = { path = "crates/nexus-tools", version = "0.1.0" }
 
-# AMAI ecosystem (local monorepo)
+# Nexus ecosystem (local monorepo)
 soul-core = { path = "../soul/soul-core", default-features = false, features = ["wasm"] }
 soul-coder = { path = "../soul/soul-coder", default-features = false, features = ["wasm"] }
 

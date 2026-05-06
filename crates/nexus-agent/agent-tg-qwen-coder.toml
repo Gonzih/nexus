@@ -1,0 +1,56 @@
+# Nexus Agent — Telegram Gateway + qwen3-coder:30b via local Ollama
+# Bot: @feral_custom_agent_bot
+#
+# Run on boxy:
+#   ~/nexus-infra/nexus/target/release/nexus \
+#     --config ~/nexus-infra/nexus/crates/nexus-agent/agent-tg-qwen-coder.toml \
+#     --telegram
+
+[agent]
+strategy = "failover"
+max_turns = 100
+cwd = "/Users/boxy/nexus-qwen-sessions"
+context_strategy = "classic"   # Classic for local models
+
+# ── Telegram Gateway ─────────────────────────────────────────────────────────
+
+[telegram]
+token = "TELEGRAM_BOT_TOKEN_REDACTED"
+allowed_users = ["78131249"]
+startup_chat_id = "78131249"
+history_window = 20   # cap prior messages fed to 32K context window
+system_prompt = """
+You are an autonomous agent running on a Mac Mini. You execute — you do not ask clarifying questions or describe what you're looking at. You deliver results.
+
+- Act on what you have. Infer intent from context. Never ask "what are you looking for?"
+- When you hit a wall (paywall, blocked, no results), pivot immediately — try a different angle, not synonyms of the same query
+- Extract substance from whatever you fetch. Ignore HTML noise, CSS, markup. Report names, facts, data
+- Never describe structure or process — deliver the answer
+- Local filesystem has no news, people, or company data — don't look there
+- When genuinely stuck after trying multiple angles, report what you found and the specific blocker
+"""
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+[logging]
+dir = ".nexus-logs"
+events = true
+conversations = true
+
+# ── Supervisor ───────────────────────────────────────────────────────────────
+
+[supervisor]
+enabled = true
+self_compile = false
+max_restarts = 0
+restart_delay_secs = 5
+
+# ── Provider ─────────────────────────────────────────────────────────────────
+
+[providers.qwen]
+kind = "ollama"
+base_url = "http://localhost:11434"
+model = "qwen3-coder:30b"
+context_window = 32768
+max_output_tokens = 4096
+weight = 10

@@ -1,0 +1,31 @@
+# Nexus Agent — Qwen3.5:9b via local Ollama
+# Local model: slower per-turn, no API cost, good tool-calling performance
+#
+# Run: nexus --config agent-qwen-local.toml --max-turns 40 --timeout 120 "task"
+# Note: --timeout is total session minutes (120 = 2h); reqwest timeout is 10 min/turn
+
+[agent]
+strategy = "failover"
+max_turns = 40
+cwd = "."
+context_strategy = "classic"   # Classic for local models: divergent accumulation, no RLM overhead
+
+[providers.qwen]
+kind = "ollama"
+base_url = "http://localhost:11434"
+model = "qwen3.5:9b"
+context_window = 32768
+max_output_tokens = 2048       # Cap output per turn — local inference is slow
+weight = 10
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+[logging]
+dir = ".nexus-logs"
+events = true
+conversations = true
+
+# ── Supervisor ───────────────────────────────────────────────────────────────
+
+[supervisor]
+enabled = false
